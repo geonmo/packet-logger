@@ -47,10 +47,6 @@ echo "  ✓ MONITOR   ${CONTAINER_IP}:{{ packet_logger_port }}"
     -l {{ packet_logger_api_port }} -h {{ packet_logger_api_port }} -t 0 -p tcp
 echo "  ✓ REST API  ${CONTAINER_IP}:{{ packet_logger_api_port }}"
 
-# ICMP — 네트워크 연결 확인용
-/usr/sbin/zfw -I -c "${CONTAINER_IP}" -m 32 -l 0 -h 65535 -t 0 -p icmp
-/usr/sbin/zfw -I -c "${HOST_IP}"      -m 32 -l 0 -h 65535 -t 0 -p icmp
-echo "  ✓ ICMP"
 
 echo "[zfw] 현재 룰 목록:"
 /usr/sbin/zfw -L 2>/dev/null || true
