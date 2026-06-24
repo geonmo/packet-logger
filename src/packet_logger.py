@@ -153,8 +153,8 @@ def make_handler(logger):
                     stats['syn_ack'] += 1
                 elif syn:
                     stats['syn'] += 1
-                elif ack and not syn:
-                    stats['ack_only'] += 1   # 공격 패킷
+                elif ack and not syn and direction == "INBOUND":
+                    stats['ack_only'] += 1   # 공격 패킷 (인바운드만)
                 if rst:
                     stats['rst'] += 1
                 if fin:
