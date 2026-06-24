@@ -33,6 +33,12 @@
 
 - name: rebuild container image
   ansible.builtin.command:
-    cmd: podman build --tag packet-logger:latest --file Containerfile .
+    cmd: podman build --network host --tag packet-logger:latest --file Containerfile .
     chdir: "{{ packet_logger_src_dir }}"
+  listen: "rebuild container image"
+
+- name: restart after rebuild
+  ansible.builtin.systemd:
+    name: packet-logger.service
+    state: restarted
   listen: "rebuild container image"
