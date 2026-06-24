@@ -15,7 +15,7 @@
 #
 # ── daddr 지정 필수 이유 ──────────────────────────────────────────
 #
-#   netdev ingress 훅은 물리 인터페이스(eth0)에 걸리므로
+#   netdev ingress 훅은 물리 인터페이스({{ packet_logger_ipvlan_parent }})에 걸리므로
 #   호스트 IP 행 패킷과 IPVLAN 컨테이너 행 패킷이 모두 통과한다.
 #   daddr 없이 dport 만 검사하면 호스트 1개에 컨테이너가 여럿 있을 때
 #   다른 컨테이너 행 패킷까지 허용되므로 반드시 daddr 로 구분해야 한다.
@@ -47,8 +47,8 @@ table netdev stateless_fw {
         icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert,
                       nd-router-solicit,  nd-router-advert  } accept
 
-        # 호스트 행 패킷 전체 허용 — 세부 제어는 firewalld 에 위임
-        ip  daddr {{ ansible_default_ipv4.address }} accept
+        # 호스트 행 패킷 전체 허용 — eth1({{ packet_logger_ipvlan_parent }}) IP 동적 참조
+        ip  daddr {{ ansible_facts[packet_logger_ipvlan_parent]['ipv4']['address'] }} accept
         ip6 nexthdr tcp tcp dport 22 accept
 
         # TCP ACK|RST — stateless 환경에서 컨테이너의 기존 세션 응답 패킷 허용
