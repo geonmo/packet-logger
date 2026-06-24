@@ -1,0 +1,15 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart attack-server
+  ansible.builtin.systemd:
+    name: attack-server.service
+    state: restarted
+
+- name: rebuild attack image
+  ansible.builtin.command:
+    cmd: podman build --tag attack-server:latest --file Containerfile .
+    chdir: "{{ attack_server_src_dir }}"
+  listen: "rebuild attack image"

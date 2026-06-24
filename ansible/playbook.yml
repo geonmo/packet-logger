@@ -1,0 +1,31 @@
+---
+# ACK Flood Demo — 전체 4-노드 배포 플레이북
+# 실행: ansible-playbook -i inventory.ini playbook.yml
+
+# ── Node 1: nftables stateless + IPVLAN (192.168.100.3) ─────
+- name: Node 1 — nftables Stateless + IPVLAN packet-logger
+  hosts: stateless_node
+  become: true
+  roles:
+    - packet_logger
+
+# ── Node 2: zfw eBPF stateful + IPVLAN (192.168.100.4) ──────
+- name: Node 2 — zfw Stateful + IPVLAN packet-logger
+  hosts: stateful_node
+  become: true
+  roles:
+    - packet_logger
+
+# ── 공격 서버 (192.168.100.5) ────────────────────────────────
+- name: Attack Node — ACK Flood + Web Dashboard
+  hosts: attack_node
+  become: true
+  roles:
+    - attack_server
+
+# ── 정상 손님 노드 (192.168.100.6) ───────────────────────────
+- name: Guest Node — 정상 TCP 접속 테스터
+  hosts: guest_node
+  become: true
+  roles:
+    - guest_client

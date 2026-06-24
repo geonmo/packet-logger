@@ -1,0 +1,52 @@
+---
+# packet_logger role 기본 변수
+# 실제 IP 등은 ansible/inventory.ini 의 [group:vars] 에서 오버라이드
+
+# ── 포트 설정 ──────────────────────────────────────────────────
+packet_logger_port:          8080
+packet_logger_api_port:      9090
+
+# ── 컨테이너 이미지 ───────────────────────────────────────────
+packet_logger_image:         "localhost/packet-logger:latest"
+
+# ── 경로 ─────────────────────────────────────────────────────
+packet_logger_src_dir:       /opt/packet-logger
+packet_logger_log_dir:       /var/log/packet-logger
+
+# ── 로깅 ─────────────────────────────────────────────────────
+packet_logger_log_level:          INFO
+packet_logger_max_log_size_mb:    100
+packet_logger_log_backup_count:   5
+packet_logger_buffer_size:        500
+
+# ── 노드 식별 ──────────────────────────────────────────────────
+packet_logger_node_name:     "node"
+
+# ── 방화벽 모드 ────────────────────────────────────────────────
+# "stateless" → nftables (netdev ingress 훅, 포트만 검사)
+# "stateful"  → zfw eBPF (TC 훅, BPF 맵 연결 상태 추적)
+packet_logger_firewall_mode: stateless
+
+# ── IPVLAN 네트워크 설정 ──────────────────────────────────────
+# 부모 인터페이스: 호스트의 물리/논리 인터페이스 이름
+packet_logger_ipvlan_parent:  "eth0"
+
+# 컨테이너에 할당할 고정 IP (인벤토리에서 오버라이드 필수)
+packet_logger_container_ip:   "192.168.100.7"
+
+# IPVLAN 서브넷 / 게이트웨이 (호스트와 동일한 물리 네트워크)
+packet_logger_ipvlan_subnet:  "192.168.100.0/24"
+packet_logger_ipvlan_gateway: "192.168.100.1"
+
+# ── zfw 설치 설정 (stateful 모드에서만 사용) ──────────────────
+# 저장소: https://github.com/netfoundry/zfw  (r-caamano/zfw 는 2024-04 아카이브)
+# 최신 버전: v0.9.22 (2025-08-05)
+zfw_version: "v0.9.22"
+
+# RPM 패키지: zfw-router (zfw 바이너리 + eBPF TC 프로그램 포함)
+# 파일명 형식: zfw-router-{VERSION}.x86_64.rpm
+zfw_download_url: >-
+  https://github.com/netfoundry/zfw/releases/download/{{ zfw_version }}/zfw-router-{{ zfw_version | regex_replace('^v','') }}.x86_64.rpm
+
+# 강제 재설치 여부
+zfw_force_reinstall: false

@@ -1,0 +1,33 @@
+# Quadlet rootful container unit
+# 위치: /etc/containers/systemd/attack-server.container
+
+[Unit]
+Description=ACK Flood Attack Server with Web Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/attack-server:latest
+ContainerName=attack-server
+Network=host
+
+# IPVLAN 컨테이너 IP (Node 1: 192.168.100.7, Node 2: 192.168.100.8)
+Environment=NODE1_IP=192.168.100.7
+Environment=NODE2_IP=192.168.100.8
+Environment=NODE1_API=http://192.168.100.7:9090
+Environment=NODE2_API=http://192.168.100.8:9090
+Environment=GUEST_API=http://192.168.100.6:7070
+Environment=TARGET_PORT=8080
+Environment=WEB_PORT=8000
+
+# raw 소켓 발송에 필요한 capability
+AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+SecurityLabelDisable=true
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

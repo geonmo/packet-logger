@@ -1,0 +1,52 @@
+#!/usr/sbin/nft -f
+# Ansible 생성 파일 — nftables stateless 방화벽
+# Node: {{ packet_logger_node_name }}  Interface: {{ packet_logger_ipvlan_parent }}
+#
+# ── IPVLAN L2 에서 netdev 테이블이 필수인 이유 ──────────────────
+#
+#   IPVLAN L2 모드: 패킷이 물리 인터페이스 → IPVLAN 분배 순서로 처리된다.
+#   이때 nftables 의 inet/ip/ip6 테이블(INPUT 훅)은 IPVLAN 컨테이너로
+#   향하는 트래픽에 대해 발화(fire)하지 않는다.
+#   또한 conntrack 이 IPVLAN L2 트래픽을 추적하지 않으므로
+#   ct state established 같은 규칙도 동작하지 않는다.
+#
+#   → 반드시 netdev 테이블의 ingress 훅 사용 필요
+#      (TC 레이어에서 동작 → IPVLAN 분배 이전에 인터셉트)
+#
+# ── Stateless 핵심 ────────────────────────────────────────────────
+#   ct state 를 전혀 참조하지 않고 tcp dport 만으로 판단.
+#   SYN 없이 ACK만 온 패킷도 포트가 맞으면 통과 → 공격 데모용 취약점
+
+flush ruleset
+
+# ── Stateless TC-level ingress 필터 ───────────────────────────────
+# policy drop: 아래 규칙에 매칭되지 않는 모든 패킷 차단
+table netdev stateless_fw {
+    chain ingress {
+        type filter hook ingress device "{{ packet_logger_ipvlan_parent }}" priority 0; policy drop;
+
+        # ARP: IPVLAN L2 네트워크 동작에 필수 (MAC 해석)
+        ether type arp accept
+
+        # IPv6 NDP: 인접 노드 탐색 (IPVLAN L2 환경)
+        icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert,
+                      nd-router-solicit,  nd-router-advert  } accept
+
+        # SSH — 관리 접속 (호스트 IP 대상)
+        ip  protocol tcp tcp dport 22 accept
+        ip6 nexthdr  tcp tcp dport 22 accept
+
+        # ─── 모니터링 포트 (포트 번호만, 연결 상태/flags 무관) ───
+        # ACK-only 가짜 패킷도 통과됨 (stateless 취약점 시연)
+        ip  protocol tcp tcp dport {{ packet_logger_port }} accept
+        ip6 nexthdr  tcp tcp dport {{ packet_logger_port }} accept
+
+        # REST API 포트 (packet-logger Flask)
+        ip  protocol tcp tcp dport {{ packet_logger_api_port }} accept
+        ip6 nexthdr  tcp tcp dport {{ packet_logger_api_port }} accept
+
+        # ICMP — ping 연결 확인용
+        ip  protocol icmp     accept
+        ip6 nexthdr  ipv6-icmp accept
+    }
+}

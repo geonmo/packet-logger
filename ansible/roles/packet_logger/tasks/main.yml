@@ -1,0 +1,138 @@
+---
+# packet_logger role — 피해 노드 메인 태스크
+# 방화벽 설정 → IPVLAN 네트워크 Quadlet → packet-logger 컨테이너
+
+# ──────────────────────────────────────────────
+# 1. 기본 패키지
+# ──────────────────────────────────────────────
+- name: 기본 패키지 설치
+  ansible.builtin.package:
+    name:
+      - podman
+      - tcpdump
+      - python3
+      - python3-pip
+      - libpcap
+    state: present
+
+# ──────────────────────────────────────────────
+# 2. 방화벽 설정 (모드에 따라 분기)
+# ──────────────────────────────────────────────
+- name: nftables stateless 방화벽 설정
+  ansible.builtin.include_tasks: nftables_stateless.yml
+  when: packet_logger_firewall_mode == 'stateless'
+
+- name: zfw eBPF stateful 방화벽 설정
+  ansible.builtin.include_tasks: zfw_stateful.yml
+  when: packet_logger_firewall_mode == 'stateful'
+
+# ──────────────────────────────────────────────
+# 3. 디렉토리 준비
+# ──────────────────────────────────────────────
+- name: 소스 / 로그 / Quadlet 디렉토리 생성
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ packet_logger_src_dir }}"
+    - "{{ packet_logger_log_dir }}"
+    - /etc/containers/systemd
+
+# ──────────────────────────────────────────────
+# 4. 소스 파일 배포
+# ──────────────────────────────────────────────
+- name: Containerfile 복사
+  ansible.builtin.copy:
+    src: Containerfile
+    dest: "{{ packet_logger_src_dir }}/Containerfile"
+    mode: '0644'
+
+- name: packet_logger.py 복사
+  ansible.builtin.copy:
+    src: packet_logger.py
+    dest: "{{ packet_logger_src_dir }}/packet_logger.py"
+    mode: '0755'
+  notify: rebuild container image
+
+- name: requirements.txt 복사
+  ansible.builtin.copy:
+    src: requirements.txt
+    dest: "{{ packet_logger_src_dir }}/requirements.txt"
+    mode: '0644'
+  notify: rebuild container image
+
+# ──────────────────────────────────────────────
+# 5. 컨테이너 이미지 빌드
+# ──────────────────────────────────────────────
+- name: 컨테이너 이미지 빌드
+  ansible.builtin.command:
+    cmd: podman build --tag packet-logger:latest --file Containerfile .
+    chdir: "{{ packet_logger_src_dir }}"
+  register: build_result
+  changed_when: true
+
+# ──────────────────────────────────────────────
+# 6. IPVLAN 네트워크 Quadlet 배포
+# ──────────────────────────────────────────────
+- name: IPVLAN 네트워크 Quadlet (.network) 배포
+  ansible.builtin.template:
+    src: packet-net.network.j2
+    dest: /etc/containers/systemd/packet-net.network
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart packet-logger
+
+# ──────────────────────────────────────────────
+# 7. 컨테이너 Quadlet 배포
+# ──────────────────────────────────────────────
+- name: packet-logger 컨테이너 Quadlet (.container) 배포
+  ansible.builtin.template:
+    src: packet-logger.container.j2
+    dest: /etc/containers/systemd/packet-logger.container
+    owner: root
+    group: root
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart packet-logger
+
+# ──────────────────────────────────────────────
+# 8. 서비스 시작
+# ──────────────────────────────────────────────
+- name: systemd 데몬 리로드
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: packet-logger 서비스 활성화 및 시작
+  ansible.builtin.systemd:
+    name: packet-logger.service
+    enabled: true
+    state: started
+
+- name: 서비스 상태 확인
+  ansible.builtin.command: systemctl status packet-logger.service --no-pager -l
+  register: svc_status
+  changed_when: false
+  failed_when: false
+
+- name: 서비스 상태 출력
+  ansible.builtin.debug:
+    msg: "{{ svc_status.stdout_lines }}"
+
+- name: 컨테이너 IP 확인
+  ansible.builtin.command: >
+    podman inspect packet-logger
+    --format '{% raw %}{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}{% endraw %}'
+  register: container_ip
+  changed_when: false
+  failed_when: false
+
+- name: 컨테이너 IP 출력
+  ansible.builtin.debug:
+    msg: "packet-logger 컨테이너 IP: {{ container_ip.stdout | default('확인 불가') }}"

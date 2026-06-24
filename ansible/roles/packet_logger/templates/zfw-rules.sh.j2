@@ -1,0 +1,57 @@
+#!/bin/bash
+# Ansible 생성 파일 — zfw eBPF 방화벽 룰 적용 스크립트
+# 이 스크립트는 fw-init.service (start_ebpf_router.py) 가 TC eBPF 프로그램을
+# 인터페이스에 attach 한 뒤에 실행되어야 합니다.
+#
+# zfw -I 룰 의미:
+#   -c <IP>   : 목적지 IP (허용할 호스트/컨테이너)
+#   -m <N>    : CIDR prefix 길이 (32 = 단일 호스트)
+#   -l/-h     : 허용 포트 범위 (low ~ high, 단일 포트는 동일값)
+#   -t 0      : tproxy-port=0 → OS 스택으로 전달 (가로채지 않음)
+#   -p tcp    : 프로토콜
+
+set -euo pipefail
+
+HOST_IP="{{ ansible_default_ipv4.address }}"
+CONTAINER_IP="{{ packet_logger_container_ip }}"
+IFACE="{{ packet_logger_ipvlan_parent }}"
+
+echo "[zfw] TC eBPF 프로그램 로드 대기..."
+# fw-init 이 먼저 attach 해야 하므로 30초까지 대기
+for i in $(seq 1 30); do
+    if tc filter show dev "${IFACE}" ingress 2>/dev/null | grep -q 'zfw\|bpf'; then
+        echo "[zfw] TC eBPF 로드 확인됨 (${i}s)"
+        break
+    fi
+    sleep 1
+done
+
+echo "[zfw] 기존 룰 초기화..."
+/usr/sbin/zfw -F 2>/dev/null || true
+
+echo "[zfw] 허용 룰 추가..."
+
+# SSH — 호스트 IP (관리 접속)
+/usr/sbin/zfw -I -c "${HOST_IP}" -m 32 -l 22 -h 22 -t 0 -p tcp
+echo "  ✓ SSH       ${HOST_IP}:22"
+
+# 모니터링 포트 — IPVLAN 컨테이너 IP
+# 정상 SYN 패킷은 허용 → ACK-only 는 BPF 맵에 상태 없음 → DROP
+/usr/sbin/zfw -I -c "${CONTAINER_IP}" -m 32 \
+    -l {{ packet_logger_port }} -h {{ packet_logger_port }} -t 0 -p tcp
+echo "  ✓ MONITOR   ${CONTAINER_IP}:{{ packet_logger_port }}"
+
+# REST API 포트 — IPVLAN 컨테이너 IP
+/usr/sbin/zfw -I -c "${CONTAINER_IP}" -m 32 \
+    -l {{ packet_logger_api_port }} -h {{ packet_logger_api_port }} -t 0 -p tcp
+echo "  ✓ REST API  ${CONTAINER_IP}:{{ packet_logger_api_port }}"
+
+# ICMP — 네트워크 연결 확인용
+/usr/sbin/zfw -I -c "${CONTAINER_IP}" -m 32 -l 0 -h 65535 -t 0 -p icmp
+/usr/sbin/zfw -I -c "${HOST_IP}"      -m 32 -l 0 -h 65535 -t 0 -p icmp
+echo "  ✓ ICMP"
+
+echo "[zfw] 현재 룰 목록:"
+/usr/sbin/zfw -L 2>/dev/null || true
+
+echo "[zfw] 룰 적용 완료"

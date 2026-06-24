@@ -1,0 +1,49 @@
+# Quadlet rootful container unit — Ansible 생성 파일
+# 방화벽 모드: {{ packet_logger_firewall_mode }}
+# 컨테이너 IP: {{ packet_logger_container_ip }}
+
+[Unit]
+Description=TCP Packet Logger — {{ packet_logger_node_name }} ({{ packet_logger_firewall_mode }})
+After=network-online.target
+Wants=network-online.target
+# IPVLAN 네트워크 Quadlet 서비스가 먼저 기동돼야 함
+After=packet-net-network.service
+Requires=packet-net-network.service
+{% if packet_logger_firewall_mode == 'stateful' %}
+# zfw eBPF 방화벽(fw-init.service)이 TC 프로그램을 attach한 뒤 기동
+After=fw-init.service
+Requires=fw-init.service
+{% endif %}
+
+[Container]
+Image={{ packet_logger_image }}
+ContainerName=packet-logger
+
+# IPVLAN 네트워크에 컨테이너 고정 IP 할당
+# IP는 Ansible 인벤토리에서 주입됨
+Network=packet-net:ip={{ packet_logger_container_ip }}
+
+Environment=LISTEN_PORT={{ packet_logger_port }}
+Environment=API_PORT={{ packet_logger_api_port }}
+Environment=LOG_FILE={{ packet_logger_log_dir }}/packets.log
+Environment=LOG_LEVEL={{ packet_logger_log_level }}
+Environment=INTERFACE=
+Environment=NODE_NAME={{ packet_logger_node_name }}
+Environment=MAX_LOG_SIZE_MB={{ packet_logger_max_log_size_mb }}
+Environment=LOG_BACKUP_COUNT={{ packet_logger_log_backup_count }}
+Environment=BUFFER_SIZE={{ packet_logger_buffer_size }}
+
+Volume={{ packet_logger_log_dir }}:{{ packet_logger_log_dir }}:Z
+
+# 패킷 캡처 권한 (IPVLAN 인터페이스에서 libpcap 사용)
+AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+SecurityLabelDisable=true
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

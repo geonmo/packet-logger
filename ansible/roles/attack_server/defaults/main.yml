@@ -1,0 +1,10 @@
+---
+attack_server_image:       "localhost/attack-server:latest"
+attack_server_src_dir:     /opt/attack-server
+attack_server_web_port:    8000
+attack_server_node1_ip:    "192.168.100.7"
+attack_server_node2_ip:    "192.168.100.8"
+attack_server_node1_api:   "http://192.168.100.7:9090"
+attack_server_node2_api:   "http://192.168.100.8:9090"
+attack_server_guest_api:   "http://192.168.100.6:7070"
+attack_server_target_port: 8080

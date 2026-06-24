@@ -1,0 +1,38 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart packet-logger
+  ansible.builtin.systemd:
+    name: packet-logger.service
+    state: restarted
+  listen: "restart packet-logger"
+
+- name: reload nftables
+  ansible.builtin.systemd:
+    name: nftables
+    state: reloaded
+  listen: "reload nftables"
+
+- name: restart fw-init
+  ansible.builtin.systemd:
+    name: fw-init.service
+    state: restarted
+  listen: "restart fw-init"
+
+- name: run zfw rules
+  ansible.builtin.command: /usr/local/bin/zfw-rules.sh
+  listen: "run zfw rules"
+
+- name: restart zfw-rules
+  ansible.builtin.systemd:
+    name: zfw-rules.service
+    state: restarted
+  listen: "restart zfw-rules"
+
+- name: rebuild container image
+  ansible.builtin.command:
+    cmd: podman build --tag packet-logger:latest --file Containerfile .
+    chdir: "{{ packet_logger_src_dir }}"
+  listen: "rebuild container image"

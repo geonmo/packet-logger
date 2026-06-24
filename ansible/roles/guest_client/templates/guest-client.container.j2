@@ -1,0 +1,26 @@
+# Quadlet rootful container unit — Ansible 생성 파일
+# 정상 손님 노드 (192.168.100.6)
+
+[Unit]
+Description=Guest Client — 정상 TCP 접속 테스터
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image={{ guest_client_image }}
+ContainerName=guest-client
+Network=host
+
+Environment=NODE1_IP={{ guest_client_node1_ip }}
+Environment=NODE2_IP={{ guest_client_node2_ip }}
+Environment=TARGET_PORT={{ guest_client_port }}
+Environment=API_PORT={{ guest_client_api_port }}
+Environment=TEST_INTERVAL={{ guest_client_interval }}
+Environment=CONNECT_TIMEOUT={{ guest_client_timeout }}
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

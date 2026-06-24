@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACK Flood Demo — Stateless vs Stateful Firewall</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surface:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;--accent:#58a6ff;
+  --danger:#f85149;--success:#3fb950;--warning:#d29922;--info:#79c0ff;
+  --r:8px;
+}
+body{background:var(--bg);color:var(--text);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px}
+header{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px}
+header h1{font-size:17px;font-weight:700}
+header p{font-size:11px;color:var(--muted);margin-top:2px}
+.ip-chip{font-size:11px;font-family:monospace;background:rgba(88,166,255,.1);border:1px solid rgba(88,166,255,.25);border-radius:4px;padding:2px 7px;color:var(--accent)}
+
+.main{padding:16px 24px;display:grid;grid-template-rows:auto auto auto;gap:14px;max-width:1800px;margin:0 auto}
+
+/* ── Control Row ── */
+.ctrl-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:14px}
+.card-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:10px}
+.form-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;align-items:end}
+.field label{display:block;font-size:11px;color:var(--muted);margin-bottom:3px}
+.field input{width:100%;background:var(--bg);border:1px solid var(--border);border-radius:5px;color:var(--text);padding:6px 9px;font-size:13px;outline:none;transition:border-color .15s}
+.field input:focus{border-color:var(--accent)}
+.btn-row{display:flex;gap:8px;align-items:center;margin-top:10px}
+.btn{padding:7px 18px;border:none;border-radius:5px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s,transform .08s;white-space:nowrap}
+.btn:active{transform:scale(.97)}
+.btn-start{background:var(--danger);color:#fff}
+.btn-stop{background:var(--muted);color:#fff}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.stat-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.stat-box{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:9px 12px}
+.stat-box .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+.stat-box .k{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+.v.danger{color:var(--danger)}.v.accent{color:var(--accent)}
+.pulse{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px}
+.pulse-on{background:var(--danger);animation:blink 1s infinite}
+.pulse-off{background:var(--muted)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+
+/* ── Node Row ── */
+.node-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.node-card{border:1px solid var(--border);border-radius:var(--r);overflow:hidden;display:flex;flex-direction:column}
+.node-card.breached{border-color:var(--danger)}
+.node-card.protected{border-color:var(--success)}
+.node-hdr{padding:10px 14px;display:flex;align-items:center;justify-content:space-between;background:var(--surface);border-bottom:1px solid var(--border)}
+.node-hdr.breached{background:rgba(248,81,73,.07)}
+.node-hdr.protected{background:rgba(63,185,80,.07)}
+.node-title{font-weight:600;font-size:13px}
+.node-ip{font-size:11px;color:var(--muted);font-family:monospace;margin-top:1px}
+.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:700;letter-spacing:.5px}
+.badge-danger{background:rgba(248,81,73,.15);color:var(--danger);border:1px solid rgba(248,81,73,.3)}
+.badge-success{background:rgba(63,185,80,.15);color:var(--success);border:1px solid rgba(63,185,80,.3)}
+.badge-warn{background:rgba(210,153,34,.15);color:var(--warning);border:1px solid rgba(210,153,34,.3)}
+.badge-muted{background:rgba(139,148,158,.1);color:var(--muted);border:1px solid var(--border)}
+.node-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.ns{background:var(--surface);padding:7px 10px;text-align:center}
+.ns .v{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.ns .k{font-size:9px;color:var(--muted);margin-top:2px;text-transform:uppercase}
+.ns .v.ack{color:var(--danger)}.ns .v.syn{color:var(--success)}.ns .v.tot{color:var(--accent)}
+.verdict{padding:5px 14px;font-size:11px;font-weight:700;letter-spacing:1px;text-align:center;border-bottom:1px solid var(--border)}
+.verdict.breached{background:rgba(248,81,73,.12);color:var(--danger)}
+.verdict.protected{background:rgba(63,185,80,.12);color:var(--success)}
+.verdict.waiting{background:rgba(139,148,158,.07);color:var(--muted)}
+.pkt-hdr{padding:5px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);background:var(--surface);border-bottom:1px solid var(--border);display:flex;justify-content:space-between}
+.pkt-list{overflow-y:auto;max-height:220px;font-family:monospace;font-size:11px}
+.pkt{padding:3px 14px;border-bottom:1px solid rgba(48,54,61,.4);display:grid;grid-template-columns:90px 1fr auto;gap:6px;align-items:center;animation:fi .15s ease}
+.pkt:hover{background:rgba(255,255,255,.02)}
+.pkt .ts{color:var(--muted)}.pkt .src{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pkt .fl{white-space:nowrap}
+.pkt.ack-only{background:rgba(248,81,73,.04)}.pkt.ack-only .fl{color:var(--danger);font-weight:700}
+.pkt.syn .fl{color:var(--success)}
+.pkt.rst .fl{color:var(--warning)}
+.empty{padding:16px;text-align:center;color:var(--muted);font-size:12px}
+@keyframes fi{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+
+/* ── Guest Row ── */
+.guest-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.guest-card{border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.guest-hdr{padding:9px 14px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.guest-title{font-size:12px;font-weight:600}
+.guest-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border)}
+.gs{background:var(--surface);padding:6px 10px;text-align:center}
+.gs .v{font-size:16px;font-weight:700;font-variant-numeric:tabular-nums}
+.gs .k{font-size:9px;color:var(--muted);margin-top:1px;text-transform:uppercase}
+.gs .v.ok{color:var(--success)}.gs .v.ref{color:var(--info)}.gs .v.to{color:var(--warning)}.gs .v.er{color:var(--danger)}
+.g-list{overflow-y:auto;max-height:160px;font-family:monospace;font-size:11px}
+.gr{padding:3px 14px;border-bottom:1px solid rgba(48,54,61,.4);display:grid;grid-template-columns:90px 1fr auto auto;gap:6px;align-items:center}
+.gr .ts{color:var(--muted)}.gr .ms{color:var(--muted);font-size:10px}
+.gr.success .st{color:var(--success)}.gr.refused .st{color:var(--info)}.gr.timeout .st{color:var(--warning)}.gr.error .st{color:var(--danger)}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🔥 ACK Flood Attack Demo</h1>
+    <p>Stateless (nftables) vs Stateful (zfw eBPF) — 공격 패킷 통과 여부 실시간 비교</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <span class="ip-chip" id="hdrNode1">Node1: —</span>
+    <span class="ip-chip" id="hdrNode2">Node2: —</span>
+    <span class="ip-chip" style="color:var(--success)" id="hdrGuest">Guest: —</span>
+  </div>
+</header>
+
+<div class="main">
+
+<!-- ── Control Row ── -->
+<div class="ctrl-row">
+  <div class="card">
+    <div class="card-title">공격 설정</div>
+    <div class="form-grid">
+      <div class="field"><label>Target Port</label><input id="cfgPort" type="number" value="8080" min="1" max="65535"></div>
+      <div class="field"><label>Duration (초, 0=∞)</label><input id="cfgDuration" type="number" value="30" min="0"></div>
+      <div class="field"><label>Rate (패킷/초)</label><input id="cfgRate" type="number" value="10" min="1" max="1000"></div>
+      <div class="field"><label>Count (0=∞)</label><input id="cfgCount" type="number" value="0" min="0"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-start" id="btnStart" onclick="startAttack()">▶ LAUNCH ATTACK</button>
+      <button class="btn btn-stop"  id="btnStop"  onclick="stopAttack()" disabled>■ STOP</button>
+      <span id="statusLabel" style="font-size:12px;color:var(--muted)">
+        <span class="pulse pulse-off"></span>IDLE
+      </span>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">공격 현황</div>
+    <div class="stat-grid">
+      <div class="stat-box"><div class="v danger" id="stSent">0</div><div class="k">발송 패킷</div></div>
+      <div class="stat-box"><div class="v accent" id="stElapsed">0s</div><div class="k">경과</div></div>
+      <div class="stat-box"><div class="v" id="stRate">—</div><div class="k">Rate</div></div>
+      <div class="stat-box"><div class="v" id="stDur">—</div><div class="k">Duration</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Node Row (Attack결과) ── -->
+<div class="node-row">
+  <!-- Node 1: Stateless -->
+  <div class="node-card" id="card-node1">
+    <div class="node-hdr" id="hdr-node1">
+      <div><div class="node-title" id="title-node1">Node 1 — Stateless (nftables)</div>
+           <div class="node-ip"   id="ip-node1">IPVLAN: —</div></div>
+      <span class="badge badge-muted" id="badge-node1">OFFLINE</span>
+    </div>
+    <div class="node-stats">
+      <div class="ns"><div class="v tot" id="n1-tot">0</div><div class="k">Total</div></div>
+      <div class="ns"><div class="v ack" id="n1-ack">0</div><div class="k">⚠️ ACK-only</div></div>
+      <div class="ns"><div class="v syn" id="n1-syn">0</div><div class="k">SYN</div></div>
+      <div class="ns"><div class="v"     id="n1-rst">0</div><div class="k">RST</div></div>
+      <div class="ns"><div class="v"     id="n1-sa"> 0</div><div class="k">SYN+ACK</div></div>
+    </div>
+    <div class="verdict waiting" id="verdict-node1">— 대기 중 —</div>
+    <div class="pkt-hdr"><span>수신 패킷 (공격)</span><span id="n1-cnt">0개</span></div>
+    <div class="pkt-list" id="pktlist-node1"><div class="empty">패킷 없음</div></div>
+  </div>
+  <!-- Node 2: Stateful -->
+  <div class="node-card" id="card-node2">
+    <div class="node-hdr" id="hdr-node2">
+      <div><div class="node-title" id="title-node2">Node 2 — Stateful (zfw eBPF)</div>
+           <div class="node-ip"   id="ip-node2">IPVLAN: —</div></div>
+      <span class="badge badge-muted" id="badge-node2">OFFLINE</span>
+    </div>
+    <div class="node-stats">
+      <div class="ns"><div class="v tot" id="n2-tot">0</div><div class="k">Total</div></div>
+      <div class="ns"><div class="v ack" id="n2-ack">0</div><div class="k">⚠️ ACK-only</div></div>
+      <div class="ns"><div class="v syn" id="n2-syn">0</div><div class="k">SYN</div></div>
+      <div class="ns"><div class="v"     id="n2-rst">0</div><div class="k">RST</div></div>
+      <div class="ns"><div class="v"     id="n2-sa"> 0</div><div class="k">SYN+ACK</div></div>
+    </div>
+    <div class="verdict waiting" id="verdict-node2">— 대기 중 —</div>
+    <div class="pkt-hdr"><span>수신 패킷 (공격)</span><span id="n2-cnt">0개</span></div>
+    <div class="pkt-list" id="pktlist-node2"><div class="empty">패킷 없음</div></div>
+  </div>
+</div>
+
+<!-- ── Guest Row (정상 접속 결과) ── -->
+<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);padding:4px 0 8px">
+  정상 사용자 (192.168.100.6) — TCP 3-way handshake 접속 테스트
+  <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">
+    (refused = 패킷 도달 ✓, timeout = 방화벽 차단 ✗)
+  </span>
+</div>
+<div class="guest-row">
+  <div class="guest-card" id="gcard-node1">
+    <div class="guest-hdr">
+      <span class="guest-title">→ Node 1 (nftables) 정상 접속</span>
+      <span class="badge badge-muted" id="gbadge-node1">—</span>
+    </div>
+    <div class="guest-stats">
+      <div class="gs"><div class="v ok"  id="g1-ok">0</div><div class="k">success</div></div>
+      <div class="gs"><div class="v ref" id="g1-ref">0</div><div class="k">refused ✓</div></div>
+      <div class="gs"><div class="v to"  id="g1-to">0</div><div class="k">timeout ✗</div></div>
+      <div class="gs"><div class="v er"  id="g1-er">0</div><div class="k">error</div></div>
+    </div>
+    <div class="pkt-hdr"><span>접속 이력</span></div>
+    <div class="g-list" id="glist-node1"><div class="empty">접속 기록 없음</div></div>
+  </div>
+  <div class="guest-card" id="gcard-node2">
+    <div class="guest-hdr">
+      <span class="guest-title">→ Node 2 (zfw) 정상 접속</span>
+      <span class="badge badge-muted" id="gbadge-node2">—</span>
+    </div>
+    <div class="guest-stats">
+      <div class="gs"><div class="v ok"  id="g2-ok">0</div><div class="k">success</div></div>
+      <div class="gs"><div class="v ref" id="g2-ref">0</div><div class="k">refused ✓</div></div>
+      <div class="gs"><div class="v to"  id="g2-to">0</div><div class="k">timeout ✗</div></div>
+      <div class="gs"><div class="v er"  id="g2-er">0</div><div class="k">error</div></div>
+    </div>
+    <div class="pkt-hdr"><span>접속 이력</span></div>
+    <div class="g-list" id="glist-node2"><div class="empty">접속 기록 없음</div></div>
+  </div>
+</div>
+
+</div><!-- .main -->
+
+<script>
+// ── 상태 ──────────────────────────────────────────────────────
+const lastPktId  = {node1:0, node2:0};
+const pktTotal   = {node1:0, node2:0};
+const lastGuestId = {node1:0, node2:0};
+
+function q(id){ return document.getElementById(id) }
+
+function flagCls(flags){
+  if(!flags) return '';
+  if(flags.includes('SYN') && flags.includes('ACK')) return 'syn-ack';
+  if(flags==='ACK') return 'ack-only';
+  if(flags.includes('SYN')) return 'syn';
+  if(flags.includes('RST')) return 'rst';
+  return '';
+}
+function fmtElapsed(s){
+  if(s<60) return `${Math.floor(s)}s`;
+  return `${Math.floor(s/60)}m${Math.floor(s%60)}s`;
+}
+
+// ── 공격 제어 ──────────────────────────────────────────────────
+async function startAttack(){
+  const body={
+    port:parseInt(q('cfgPort').value)||8080,
+    duration:parseFloat(q('cfgDuration').value)||0,
+    rate:parseFloat(q('cfgRate').value)||10,
+    count:parseInt(q('cfgCount').value)||0,
+  };
+  const r=await fetch('/api/attack',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(r.ok){ q('btnStart').disabled=true; q('btnStop').disabled=false; }
+}
+async function stopAttack(){
+  await fetch('/api/attack',{method:'DELETE'});
+  q('btnStart').disabled=false; q('btnStop').disabled=true;
+}
+
+// ── 공격 현황 폴링 ─────────────────────────────────────────────
+async function pollAttack(){
+  try{
+    const st=await (await fetch('/api/attack/status')).json();
+    q('btnStart').disabled=st.running;
+    q('btnStop').disabled=!st.running;
+    const lbl=q('statusLabel');
+    lbl.innerHTML=st.running
+      ?`<span class="pulse pulse-on"></span><span style="color:var(--danger);font-weight:700">ATTACKING</span>`
+      :`<span class="pulse pulse-off"></span>IDLE`;
+    q('stSent').textContent=(st.sent||0).toLocaleString();
+    q('stElapsed').textContent=fmtElapsed(st.elapsed||0);
+    q('stRate').textContent=st.rate?`${st.rate}/s`:'—';
+    q('stDur').textContent=st.duration>0?`${st.duration}s`:'∞';
+  }catch(e){}
+}
+
+// ── 노드 폴링 ─────────────────────────────────────────────────
+async function pollNodes(){
+  try{
+    const data=await (await fetch('/api/nodes')).json();
+    for(const[nid,info] of Object.entries(data)) updateNode(nid,nid.slice(-1),info);
+  }catch(e){}
+}
+
+function updateNode(nid,n,info){
+  const card=q(`card-${nid}`), hdr=q(`hdr-${nid}`);
+  const badge=q(`badge-${nid}`), verdict=q(`verdict-${nid}`);
+  q(`title-${nid}`).textContent=info.label||nid;
+  q(`ip-${nid}`).textContent=`IPVLAN: ${info.ip||'—'}`;
+
+  if(!info.online){
+    badge.textContent='OFFLINE'; badge.className='badge badge-muted';
+    verdict.textContent='⚠️ 노드 오프라인'; verdict.className='verdict waiting';
+    return;
+  }
+  const st=info.stats||{};
+  q(`n${n}-tot`).textContent=(st.total   ||0).toLocaleString();
+  q(`n${n}-ack`).textContent=(st.ack_only||0).toLocaleString();
+  q(`n${n}-syn`).textContent=(st.syn     ||0).toLocaleString();
+  q(`n${n}-rst`).textContent=(st.rst     ||0).toLocaleString();
+  q(`n${n}-sa`).textContent =(st.syn_ack ||0).toLocaleString();
+
+  if((st.ack_only||0)>0){
+    badge.textContent='⚠️ COMPROMISED'; badge.className='badge badge-danger';
+    card.className='node-card breached'; hdr.className='node-hdr breached';
+    verdict.textContent='⚠️ 방화벽 우회됨 — ACK-only 패킷 통과'; verdict.className='verdict breached';
+  } else if(info.online){
+    const isStateful=info.fw_type==='stateful';
+    badge.textContent=isStateful?'✅ PROTECTED':'● MONITORING';
+    badge.className=isStateful?'badge badge-success':'badge badge-warn';
+    card.className='node-card'+(isStateful?' protected':'');
+    hdr.className='node-hdr'+(isStateful?' protected':'');
+    verdict.textContent=isStateful
+      ?'✅ zfw eBPF — ACK-only 패킷 차단 중 (상태 추적)'
+      :'⏳ nftables stateless — 공격 대기 중';
+    verdict.className=isStateful?'verdict protected':'verdict waiting';
+  }
+
+  const newPkts=(info.packets||[]).filter(p=>p.id>lastPktId[nid]);
+  if(newPkts.length){
+    lastPktId[nid]=Math.max(...newPkts.map(p=>p.id));
+    appendPkts(nid,n,newPkts);
+  }
+}
+
+function appendPkts(nid,n,pkts){
+  const list=q(`pktlist-${nid}`);
+  const emp=list.querySelector('.empty');
+  if(emp) emp.remove();
+  pkts.slice().reverse().forEach(p=>{
+    const fc=flagCls(p.flags);
+    const div=document.createElement('div');
+    div.className=`pkt ${fc}`;
+    div.innerHTML=`<span class="ts">${p.ts_str}</span>`+
+                  `<span class="src">${p.src}→${p.dst}</span>`+
+                  `<span class="fl">[${p.flags}]</span>`;
+    list.insertBefore(div,list.firstChild);
+    pktTotal[nid]++;
+  });
+  while(list.children.length>60) list.removeChild(list.lastChild);
+  q(`n${n}-cnt`).textContent=`${pktTotal[nid].toLocaleString()}개`;
+}
+
+// ── 손님 클라이언트 폴링 ──────────────────────────────────────
+async function pollGuest(){
+  try{
+    const res=await (await fetch('/api/guest')).json();
+    if(!res.online) return;
+    const data=res.data||{};
+    for(const nid of ['node1','node2']){
+      const info=data[nid];
+      if(!info) continue;
+      const n=nid.slice(-1);
+      const sm=info.summary||{};
+      q(`g${n}-ok`).textContent =(sm.success||0).toLocaleString();
+      q(`g${n}-ref`).textContent=(sm.refused||0).toLocaleString();
+      q(`g${n}-to`).textContent =(sm.timeout||0).toLocaleString();
+      q(`g${n}-er`).textContent =(sm.error  ||0).toLocaleString();
+
+      // 배지: refused or success = 도달함 OK
+      const tot=(sm.refused||0)+(sm.success||0);
+      const badge=q(`gbadge-${nid}`);
+      if(sm.timeout>0){
+        badge.textContent='✗ 방화벽 차단'; badge.className='badge badge-warn';
+      } else if(tot>0){
+        badge.textContent='✓ 패킷 도달 확인'; badge.className='badge badge-success';
+      }
+
+      // 이력 추가
+      const newItems=(info.items||[]).filter(r=>r.id>lastGuestId[nid]);
+      if(newItems.length){
+        lastGuestId[nid]=Math.max(...newItems.map(r=>r.id));
+        appendGuest(nid,n,newItems);
+      }
+    }
+  }catch(e){}
+}
+
+function appendGuest(nid,n,items){
+  const list=q(`glist-${nid}`);
+  const emp=list.querySelector('.empty');
+  if(emp) emp.remove();
+  items.slice().reverse().forEach(r=>{
+    const div=document.createElement('div');
+    div.className=`gr ${r.status}`;
+    const icon={success:'✓',refused:'⚡',timeout:'✗',error:'?'}[r.status]||'?';
+    div.innerHTML=`<span class="ts">${r.ts_str}</span>`+
+                  `<span class="st">${icon} ${r.status}</span>`+
+                  `<span style="color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.detail}</span>`+
+                  `<span class="ms">${r.ms}ms</span>`;
+    list.insertBefore(div,list.firstChild);
+  });
+  while(list.children.length>40) list.removeChild(list.lastChild);
+}
+
+// ── 초기화 ────────────────────────────────────────────────────
+async function init(){
+  try{
+    const cfg=await (await fetch('/api/config')).json();
+    if(cfg.target_port) q('cfgPort').value=cfg.target_port;
+    if(cfg.nodes){
+      for(const[nid,n] of Object.entries(cfg.nodes)){
+        const num=nid.slice(-1);
+        q(`hdrNode${num}`).textContent=`${n.fw_type==='stateless'?'Node1(SL)':'Node2(SF)'}: ${n.ip}`;
+      }
+    }
+    q('hdrGuest').textContent=`Guest: ${cfg.guest_api||'—'}`;
+  }catch(e){}
+}
+
+init();
+setInterval(pollAttack,  800);
+setInterval(pollNodes,  1000);
+setInterval(pollGuest,  2000);
+pollAttack(); pollNodes(); pollGuest();
+</script>
+</body>
+</html>

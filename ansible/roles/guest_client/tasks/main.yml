@@ -1,0 +1,62 @@
+---
+- name: 필수 패키지 설치
+  ansible.builtin.package:
+    name: [podman, python3, python3-pip]
+    state: present
+
+- name: 소스 디렉토리 생성
+  ansible.builtin.file:
+    path: "{{ guest_client_src_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Quadlet 디렉토리 확인
+  ansible.builtin.file:
+    path: /etc/containers/systemd
+    state: directory
+    mode: '0755'
+
+- name: Containerfile 복사
+  ansible.builtin.copy:
+    src: Containerfile
+    dest: "{{ guest_client_src_dir }}/Containerfile"
+    mode: '0644'
+
+- name: guest_client.py 복사
+  ansible.builtin.copy:
+    src: guest_client.py
+    dest: "{{ guest_client_src_dir }}/guest_client.py"
+    mode: '0755'
+  notify: rebuild guest image
+
+- name: requirements.txt 복사
+  ansible.builtin.copy:
+    src: requirements.txt
+    dest: "{{ guest_client_src_dir }}/requirements.txt"
+    mode: '0644'
+  notify: rebuild guest image
+
+- name: 컨테이너 이미지 빌드
+  ansible.builtin.command:
+    cmd: podman build --tag guest-client:latest --file Containerfile .
+    chdir: "{{ guest_client_src_dir }}"
+  changed_when: true
+
+- name: Quadlet .container 파일 배포
+  ansible.builtin.template:
+    src: guest-client.container.j2
+    dest: /etc/containers/systemd/guest-client.container
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart guest-client
+
+- name: systemd 데몬 리로드
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: guest-client 서비스 활성화 및 시작
+  ansible.builtin.systemd:
+    name: guest-client.service
+    enabled: true
+    state: started

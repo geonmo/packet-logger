@@ -1,0 +1,31 @@
+FROM registry.access.redhat.com/ubi9/ubi:latest
+
+LABEL maintainer="KISTI"
+LABEL description="ACK Flood Attack Server with Web Dashboard"
+
+RUN dnf install -y \
+        python3 \
+        python3-pip \
+        libpcap \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY attack_server.py .
+COPY static/ ./static/
+
+ENV NODE1_IP=192.168.1.10
+ENV NODE2_IP=192.168.1.11
+ENV TARGET_PORT=8080
+ENV WEB_PORT=8000
+
+EXPOSE 8000
+
+# raw 소켓으로 패킷 발송 위해 root 필요
+USER root
+
+CMD ["python3", "/app/attack_server.py"]

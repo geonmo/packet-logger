@@ -1,0 +1,30 @@
+# Quadlet rootful container unit — Ansible 생성 파일
+
+[Unit]
+Description=ACK Flood Attack Server with Web Dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image={{ attack_server_image }}
+ContainerName=attack-server
+Network=host
+
+Environment=NODE1_IP={{ attack_server_node1_ip }}
+Environment=NODE2_IP={{ attack_server_node2_ip }}
+Environment=NODE1_API={{ attack_server_node1_api }}
+Environment=NODE2_API={{ attack_server_node2_api }}
+Environment=GUEST_API={{ attack_server_guest_api }}
+Environment=TARGET_PORT={{ attack_server_target_port }}
+Environment=WEB_PORT={{ attack_server_web_port }}
+
+AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+SecurityLabelDisable=true
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

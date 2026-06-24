@@ -1,0 +1,37 @@
+FROM registry.access.redhat.com/ubi9/ubi:latest
+
+LABEL maintainer="KISTI"
+LABEL description="TCP Packet Logger with REST API"
+
+RUN dnf install -y \
+        python3 \
+        python3-pip \
+        libpcap \
+        tcpdump \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+COPY packet_logger.py .
+
+RUN mkdir -p /var/log/packet-logger
+
+ENV LISTEN_PORT=8080
+ENV INTERFACE=""
+ENV LOG_FILE=/var/log/packet-logger/packets.log
+ENV LOG_LEVEL=INFO
+ENV MAX_LOG_SIZE_MB=100
+ENV LOG_BACKUP_COUNT=5
+ENV API_PORT=9090
+ENV BUFFER_SIZE=500
+ENV NODE_NAME=node
+
+EXPOSE 9090
+
+USER root
+
+CMD ["python3", "/app/packet_logger.py"]

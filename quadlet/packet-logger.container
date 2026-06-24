@@ -1,0 +1,37 @@
+# Quadlet rootful container unit — 참조용 (Node 1 stateless 기준 하드코딩)
+# 실제 배포: ansible/roles/packet_logger/templates/packet-logger.container.j2 사용
+# 위치: /etc/containers/systemd/packet-logger.container
+
+[Unit]
+Description=TCP Packet Logger with REST API (Node 1 Stateless)
+After=network-online.target packet-net-network.service
+Wants=network-online.target
+Requires=packet-net-network.service
+
+[Container]
+Image=localhost/packet-logger:latest
+ContainerName=packet-logger
+
+# IPVLAN L2 네트워크 — Node 1 컨테이너 고정 IP
+Network=packet-net:ip=192.168.100.7
+
+Environment=LISTEN_PORT=8080
+Environment=API_PORT=9090
+Environment=LOG_FILE=/var/log/packet-logger/packets.log
+Environment=LOG_LEVEL=INFO
+Environment=INTERFACE=
+Environment=NODE_NAME=node1-stateless
+
+Volume=/var/log/packet-logger:/var/log/packet-logger:Z
+
+AddCapability=CAP_NET_RAW
+AddCapability=CAP_NET_ADMIN
+SecurityLabelDisable=true
+
+[Service]
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

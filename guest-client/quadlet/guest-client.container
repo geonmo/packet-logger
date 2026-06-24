@@ -1,0 +1,27 @@
+# Quadlet rootful container unit
+# 위치: /etc/containers/systemd/guest-client.container
+# 정상 손님 노드 (192.168.100.6)에서 실행
+
+[Unit]
+Description=Guest Client — 정상 사용자 TCP 접속 테스터
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/guest-client:latest
+ContainerName=guest-client
+Network=host
+
+Environment=NODE1_IP=192.168.100.7
+Environment=NODE2_IP=192.168.100.8
+Environment=TARGET_PORT=8080
+Environment=API_PORT=7070
+Environment=TEST_INTERVAL=5.0
+Environment=CONNECT_TIMEOUT=2.0
+
+[Service]
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

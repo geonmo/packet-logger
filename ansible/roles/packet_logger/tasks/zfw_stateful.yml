@@ -1,0 +1,153 @@
+---
+# Node 2 — zfw eBPF stateful 방화벽 (netfoundry/zfw v0.9.22+)
+#
+# 동작 원리:
+#   start_ebpf_router.py → TC eBPF 프로그램(zfw_tc_ingress.o) 인터페이스 attach
+#   → BPF 맵에 TCP 연결 상태 추적
+#   → zfw -I 로 허용 포트/IP 등록
+#   → SYN 없이 오는 ACK-only 패킷: BPF 맵에 상태 없음 → DROP (stateful)
+
+# ──────────────────────────────────────────────
+# 1. 의존 패키지
+# ──────────────────────────────────────────────
+- name: eBPF/TC 의존 패키지 설치
+  ansible.builtin.package:
+    name:
+      - iproute-tc      # tc 명령
+      - python3         # start_ebpf_router.py 실행
+      - python3-pyyaml  # start_ebpf_router.py 의존성
+    state: present
+
+- name: firewalld 비활성화 (zfw 가 TC 레벨에서 직접 관리)
+  ansible.builtin.systemd:
+    name: firewalld
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+- name: nftables 비활성화 (충돌 방지)
+  ansible.builtin.systemd:
+    name: nftables
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+# ──────────────────────────────────────────────
+# 2. zfw RPM 설치
+# ──────────────────────────────────────────────
+- name: zfw RPM 임시 경로 설정
+  ansible.builtin.set_fact:
+    # netfoundry/zfw v0.9.22+ 파일명: zfw-router-{ver}.x86_64.rpm
+    zfw_rpm_path: "/tmp/zfw-router-{{ zfw_version | regex_replace('^v','') }}.x86_64.rpm"
+
+- name: zfw RPM 다운로드
+  ansible.builtin.get_url:
+    url: "{{ zfw_download_url }}"
+    dest: "{{ zfw_rpm_path }}"
+    mode: '0644'
+    timeout: 60
+  register: zfw_download
+
+- name: zfw RPM 설치
+  ansible.builtin.package:
+    name: "{{ zfw_rpm_path }}"
+    state: present
+    disable_gpg_check: true
+  when: zfw_download is changed or zfw_force_reinstall | default(false)
+
+- name: zfw 바이너리 존재 확인
+  ansible.builtin.stat:
+    path: /usr/sbin/zfw
+  register: zfw_bin
+
+- name: zfw 설치 실패 시 중단
+  ansible.builtin.fail:
+    msg: "/usr/sbin/zfw 를 찾을 수 없습니다. RPM 설치를 확인하세요."
+  when: not zfw_bin.stat.exists
+
+# ──────────────────────────────────────────────
+# 3. ebpf_config.json 배포 (인터페이스 설정)
+# ──────────────────────────────────────────────
+- name: /opt/openziti/etc 디렉토리 확인
+  ansible.builtin.file:
+    path: /opt/openziti/etc
+    state: directory
+    mode: '0755'
+
+- name: ebpf_config.json 배포
+  ansible.builtin.template:
+    src: ebpf_config.json.j2
+    dest: /opt/openziti/etc/ebpf_config.json
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart fw-init
+
+# ──────────────────────────────────────────────
+# 4. 룰 적용 스크립트 배포
+# ──────────────────────────────────────────────
+- name: zfw 룰 스크립트 배포
+  ansible.builtin.template:
+    src: zfw-rules.sh.j2
+    dest: /usr/local/bin/zfw-rules.sh
+    owner: root
+    group: root
+    mode: '0750'
+  notify: run zfw rules
+
+# ──────────────────────────────────────────────
+# 5. fw-init.service 활성화 (TC eBPF attach + 부트 시 복원)
+# ──────────────────────────────────────────────
+- name: fw-init.service 활성화 및 시작 (TC eBPF 프로그램 attach)
+  ansible.builtin.systemd:
+    name: fw-init.service
+    daemon_reload: true
+    state: started
+    enabled: true
+
+- name: fw-init 기동 완료 대기 (TC 프로그램 attach)
+  ansible.builtin.pause:
+    seconds: 5
+
+# ──────────────────────────────────────────────
+# 6. 룰 즉시 적용
+# ──────────────────────────────────────────────
+- name: zfw 룰 적용
+  ansible.builtin.command: /usr/local/bin/zfw-rules.sh
+  changed_when: true
+  register: zfw_rules_out
+
+- name: zfw 룰 적용 결과 출력
+  ansible.builtin.debug:
+    msg: "{{ zfw_rules_out.stdout_lines }}"
+
+# ──────────────────────────────────────────────
+# 7. 재부트 후 룰 재적용을 위한 서비스
+# ──────────────────────────────────────────────
+- name: zfw-rules 재부트 후 자동 실행 서비스 배포
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/zfw-rules.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=ZFW eBPF Allow Rules
+      After=fw-init.service
+      Requires=fw-init.service
+
+      [Service]
+      Type=oneshot
+      RemainAfterExit=yes
+      ExecStart=/usr/local/bin/zfw-rules.sh
+
+      [Install]
+      WantedBy=multi-user.target
+  notify:
+    - reload systemd
+    - restart zfw-rules
+
+- name: zfw-rules.service 활성화
+  ansible.builtin.systemd:
+    name: zfw-rules.service
+    daemon_reload: true
+    enabled: true
+    state: started

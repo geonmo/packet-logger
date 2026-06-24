@@ -1,0 +1,15 @@
+---
+- name: reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: restart guest-client
+  ansible.builtin.systemd:
+    name: guest-client.service
+    state: restarted
+
+- name: rebuild guest image
+  ansible.builtin.command:
+    cmd: podman build --tag guest-client:latest --file Containerfile .
+    chdir: "{{ guest_client_src_dir }}"
+  listen: "rebuild guest image"

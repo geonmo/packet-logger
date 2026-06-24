@@ -1,0 +1,52 @@
+---
+# Node 1 — nftables stateless 방화벽
+# netdev 테이블 ingress 훅: TC 레벨 필터링, 포트 번호만 검사
+# conntrack / ct state 미사용 → ACK-only 패킷도 통과
+
+- name: nftables 설치
+  ansible.builtin.package:
+    name:
+      - nftables
+    state: present
+
+- name: firewalld 비활성화 (nftables 직접 관리)
+  ansible.builtin.systemd:
+    name: firewalld
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+- name: iptables-legacy 비활성화 (충돌 방지)
+  ansible.builtin.systemd:
+    name: iptables
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+- name: nftables 규칙 파일 배포
+  ansible.builtin.template:
+    src: nftables.conf.j2
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: '0640'
+  notify: reload nftables
+
+- name: nftables 서비스 활성화 및 시작
+  ansible.builtin.systemd:
+    name: nftables
+    state: started
+    enabled: true
+
+- name: nftables 규칙 즉시 적용
+  ansible.builtin.command: nft -f /etc/nftables.conf
+  changed_when: true
+
+- name: 적용된 nftables 규칙 확인
+  ansible.builtin.command: nft list ruleset
+  register: nft_rules
+  changed_when: false
+
+- name: nftables 규칙 출력
+  ansible.builtin.debug:
+    msg: "{{ nft_rules.stdout_lines }}"

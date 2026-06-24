@@ -1,0 +1,22 @@
+# Quadlet IPVLAN 네트워크 유닛 — Ansible 생성 파일
+# 위치: /etc/containers/systemd/packet-net.network
+#
+# IPVLAN L2: 컨테이너가 부모 인터페이스에서 독립된 IP를 가짐
+# 같은 서브넷의 다른 호스트에서 컨테이너 IP로 직접 접근 가능
+
+[Unit]
+Description=IPVLAN Network for Packet Logger ({{ packet_logger_node_name }})
+
+[Network]
+NetworkName=packet-net
+
+# IPVLAN 드라이버 + 부모 인터페이스 + L2 모드
+Driver=ipvlan
+Options=parent={{ packet_logger_ipvlan_parent }},mode=l2
+
+# 서브넷 / 게이트웨이 (호스트와 동일한 물리 네트워크)
+Subnet={{ packet_logger_ipvlan_subnet }}
+Gateway={{ packet_logger_ipvlan_gateway }}
+
+# DNS 비활성화 (패킷 캡처 전용 네트워크)
+DisableDNS=true

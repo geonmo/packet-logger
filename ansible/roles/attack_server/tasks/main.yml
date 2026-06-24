@@ -1,0 +1,122 @@
+---
+# attack_server role — 공격 서버 설정
+
+# ──────────────────────────────────────────────
+# 1. 패키지
+# ──────────────────────────────────────────────
+- name: 필수 패키지 설치
+  ansible.builtin.package:
+    name:
+      - podman
+      - python3
+      - python3-pip
+      - libpcap
+    state: present
+
+# ──────────────────────────────────────────────
+# 2. 방화벽: 웹 UI 포트 오픈
+# ──────────────────────────────────────────────
+- name: firewalld 비활성화 (iptables 직접 관리)
+  ansible.builtin.systemd:
+    name: firewalld
+    state: stopped
+    enabled: false
+  ignore_errors: true
+
+- name: 공격 서버 iptables 규칙
+  ansible.builtin.shell: |
+    iptables -F INPUT
+    iptables -P INPUT   DROP
+    iptables -P OUTPUT  ACCEPT
+    iptables -A INPUT -i lo -j ACCEPT
+    iptables -A INPUT -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+    iptables -A INPUT -p tcp --dport 22 -m conntrack --ctstate NEW --syn -j ACCEPT
+    iptables -A INPUT -p tcp --dport {{ attack_server_web_port }} \
+             -m conntrack --ctstate NEW --syn -j ACCEPT
+    iptables -A INPUT -p icmp -j ACCEPT
+  args:
+    executable: /bin/bash
+  changed_when: true
+
+# ──────────────────────────────────────────────
+# 3. 소스 파일 배포
+# ──────────────────────────────────────────────
+- name: 소스 디렉토리 생성
+  ansible.builtin.file:
+    path: "{{ attack_server_src_dir }}/static"
+    state: directory
+    mode: '0755'
+
+- name: Containerfile 복사
+  ansible.builtin.copy:
+    src: Containerfile
+    dest: "{{ attack_server_src_dir }}/Containerfile"
+    mode: '0644'
+
+- name: attack_server.py 복사
+  ansible.builtin.copy:
+    src: attack_server.py
+    dest: "{{ attack_server_src_dir }}/attack_server.py"
+    mode: '0755'
+  notify: rebuild attack image
+
+- name: requirements.txt 복사
+  ansible.builtin.copy:
+    src: requirements.txt
+    dest: "{{ attack_server_src_dir }}/requirements.txt"
+    mode: '0644'
+  notify: rebuild attack image
+
+- name: index.html 복사
+  ansible.builtin.copy:
+    src: static/index.html
+    dest: "{{ attack_server_src_dir }}/static/index.html"
+    mode: '0644'
+
+# ──────────────────────────────────────────────
+# 4. 컨테이너 이미지 빌드
+# ──────────────────────────────────────────────
+- name: 컨테이너 이미지 빌드
+  ansible.builtin.command:
+    cmd: podman build --tag attack-server:latest --file Containerfile .
+    chdir: "{{ attack_server_src_dir }}"
+  register: build_result
+  changed_when: true
+
+# ──────────────────────────────────────────────
+# 5. Quadlet 배포 및 서비스 시작
+# ──────────────────────────────────────────────
+- name: Quadlet 디렉토리 확인
+  ansible.builtin.file:
+    path: /etc/containers/systemd
+    state: directory
+    mode: '0755'
+
+- name: attack-server Quadlet 파일 배포
+  ansible.builtin.template:
+    src: attack-server.container.j2
+    dest: /etc/containers/systemd/attack-server.container
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart attack-server
+
+- name: systemd 데몬 리로드
+  ansible.builtin.systemd:
+    daemon_reload: true
+
+- name: attack-server 서비스 시작
+  ansible.builtin.systemd:
+    name: attack-server.service
+    enabled: true
+    state: started
+
+- name: 서비스 상태 확인
+  ansible.builtin.command: systemctl status attack-server.service --no-pager -l
+  register: svc_status
+  changed_when: false
+  failed_when: false
+
+- name: 서비스 상태 출력
+  ansible.builtin.debug:
+    msg: "{{ svc_status.stdout_lines }}"
