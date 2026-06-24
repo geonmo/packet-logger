@@ -57,6 +57,22 @@
     - reload systemd
     - restart guest-client
 
+- name: guest-client API 포트 7070 방화벽 허용 (internal zone)
+  ansible.posix.firewalld:
+    port: 7070/tcp
+    zone: internal
+    permanent: true
+    state: enabled
+    immediate: true
+
+- name: guest-client API 포트 7070 방화벽 허용 (public zone)
+  ansible.posix.firewalld:
+    port: 7070/tcp
+    zone: public
+    permanent: true
+    state: enabled
+    immediate: true
+
 - name: systemd 데몬 리로드
   ansible.builtin.systemd:
     daemon_reload: true
