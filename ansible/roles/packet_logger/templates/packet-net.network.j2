@@ -12,7 +12,8 @@ NetworkName=packet-net
 
 # IPVLAN 드라이버 + 부모 인터페이스 + L2 모드
 Driver=ipvlan
-Options=parent={{ packet_logger_ipvlan_parent }},mode=l2
+Options=parent={{ packet_logger_ipvlan_parent }}
+Options=mode=l2
 
 # 서브넷 / 게이트웨이 (호스트와 동일한 물리 네트워크)
 Subnet={{ packet_logger_ipvlan_subnet }}
