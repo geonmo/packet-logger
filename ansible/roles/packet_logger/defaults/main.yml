@@ -29,7 +29,7 @@ packet_logger_firewall_mode: stateless
 
 # ── IPVLAN 네트워크 설정 ──────────────────────────────────────
 # 부모 인터페이스: 호스트의 물리/논리 인터페이스 이름
-packet_logger_ipvlan_parent:  "eth0"
+packet_logger_ipvlan_parent:  "eth1"
 
 # 컨테이너에 할당할 고정 IP (인벤토리에서 오버라이드 필수)
 packet_logger_container_ip:   "192.168.100.7"

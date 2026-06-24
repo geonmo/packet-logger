@@ -13,6 +13,13 @@
 #   → 반드시 netdev 테이블의 ingress 훅 사용 필요
 #      (TC 레이어에서 동작 → IPVLAN 분배 이전에 인터셉트)
 #
+# ── daddr 지정 필수 이유 ──────────────────────────────────────────
+#
+#   netdev ingress 훅은 물리 인터페이스(eth0)에 걸리므로
+#   호스트 IP 행 패킷과 IPVLAN 컨테이너 행 패킷이 모두 통과한다.
+#   daddr 없이 dport 만 검사하면 호스트 1개에 컨테이너가 여럿 있을 때
+#   다른 컨테이너 행 패킷까지 허용되므로 반드시 daddr 로 구분해야 한다.
+#
 # ── Stateless 핵심 ────────────────────────────────────────────────
 #   ct state 를 전혀 참조하지 않고 tcp dport 만으로 판단.
 #   SYN 없이 ACK만 온 패킷도 포트가 맞으면 통과 → 공격 데모용 취약점
@@ -22,6 +29,14 @@ flush ruleset
 # ── Stateless TC-level ingress 필터 ───────────────────────────────
 # policy drop: 아래 규칙에 매칭되지 않는 모든 패킷 차단
 table netdev stateless_fw {
+
+    # 이 노드의 IPVLAN 컨테이너 IP 집합
+    # 호스트 1개에 컨테이너가 여럿 뜰 경우 여기에 추가
+    set container_ips_v4 {
+        type ipv4_addr
+        elements = { {{ packet_logger_container_ip }} }
+    }
+
     chain ingress {
         type filter hook ingress device "{{ packet_logger_ipvlan_parent }}" priority 0; policy drop;
 
@@ -32,21 +47,24 @@ table netdev stateless_fw {
         icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert,
                       nd-router-solicit,  nd-router-advert  } accept
 
-        # SSH — 관리 접속 (호스트 IP 대상)
-        ip  protocol tcp tcp dport 22 accept
-        ip6 nexthdr  tcp tcp dport 22 accept
+        # 호스트 행 패킷 전체 허용 — 세부 제어는 firewalld 에 위임
+        ip  daddr {{ ansible_default_ipv4.address }} accept
+        ip6 nexthdr tcp tcp dport 22 accept
 
-        # ─── 모니터링 포트 (포트 번호만, 연결 상태/flags 무관) ───
+        # TCP ACK|RST — stateless 환경에서 컨테이너의 기존 세션 응답 패킷 허용
+        # (ACK 또는 RST 중 하나라도 set 되어 있으면 통과)
+        ip daddr @container_ips_v4 ip protocol tcp tcp flags & (ack | rst) != 0 accept
+
+        # ─── 모니터링 포트 — IPVLAN 컨테이너 IP 대상만 허용 ───
+        # daddr 로 컨테이너 IP 를 지정해야 다른 컨테이너 포트와 충돌하지 않음
         # ACK-only 가짜 패킷도 통과됨 (stateless 취약점 시연)
-        ip  protocol tcp tcp dport {{ packet_logger_port }} accept
-        ip6 nexthdr  tcp tcp dport {{ packet_logger_port }} accept
+        ip  daddr @container_ips_v4 ip  protocol tcp tcp dport {{ packet_logger_port }} accept
 
-        # REST API 포트 (packet-logger Flask)
-        ip  protocol tcp tcp dport {{ packet_logger_api_port }} accept
-        ip6 nexthdr  tcp tcp dport {{ packet_logger_api_port }} accept
+        # REST API 포트 — IPVLAN 컨테이너 IP 대상만 허용
+        ip  daddr @container_ips_v4 ip  protocol tcp tcp dport {{ packet_logger_api_port }} accept
 
-        # ICMP — ping 연결 확인용
-        ip  protocol icmp     accept
-        ip6 nexthdr  ipv6-icmp accept
+        # ICMP — 컨테이너/호스트 모두 ping 허용
+        ip  daddr @container_ips_v4 ip  protocol icmp accept
+        ip6 nexthdr ipv6-icmp accept
     }
 }
