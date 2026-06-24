@@ -75,7 +75,7 @@
 # ──────────────────────────────────────────────
 - name: 컨테이너 이미지 빌드
   ansible.builtin.command:
-    cmd: podman build --tag packet-logger:latest --file Containerfile .
+    cmd: podman build --network host --tag packet-logger:latest --file Containerfile .
     chdir: "{{ packet_logger_src_dir }}"
   register: build_result
   changed_when: true

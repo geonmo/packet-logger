@@ -84,7 +84,7 @@
 # ──────────────────────────────────────────────
 - name: 컨테이너 이미지 빌드
   ansible.builtin.command:
-    cmd: podman build --tag attack-server:latest --file Containerfile .
+    cmd: podman build --network host --tag attack-server:latest --file Containerfile .
     chdir: "{{ attack_server_src_dir }}"
   register: build_result
   changed_when: true
