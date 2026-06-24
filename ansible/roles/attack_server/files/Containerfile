@@ -3,6 +3,9 @@ FROM registry.access.redhat.com/ubi9/ubi:latest
 LABEL maintainer="KISTI"
 LABEL description="ACK Flood Attack Server with Web Dashboard"
 
+COPY kisti_cert.crt /etc/pki/ca-trust/source/anchors/kisti_cert.crt
+RUN update-ca-trust extract
+
 RUN dnf install -y \
         python3 \
         python3-pip \

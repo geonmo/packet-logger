@@ -53,6 +53,12 @@
     dest: "{{ attack_server_src_dir }}/Containerfile"
     mode: '0644'
 
+- name: KISTI CA 인증서 복사 (SSL 인터셉트 프록시 대응)
+  ansible.builtin.copy:
+    src: kisti_cert.crt
+    dest: "{{ attack_server_src_dir }}/kisti_cert.crt"
+    mode: '0644'
+
 - name: attack_server.py 복사
   ansible.builtin.copy:
     src: attack_server.py

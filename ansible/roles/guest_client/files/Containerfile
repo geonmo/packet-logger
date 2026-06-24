@@ -2,6 +2,9 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 LABEL description="Guest Client — 정상 사용자 TCP 접속 테스터"
 
+COPY kisti_cert.crt /etc/pki/ca-trust/source/anchors/kisti_cert.crt
+RUN update-ca-trust extract
+
 RUN microdnf install -y python3 python3-pip && microdnf clean all
 
 WORKDIR /app
